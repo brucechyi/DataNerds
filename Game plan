@@ -1,0 +1,9 @@
+Game plan
+
+1) Clean dataset:
+    a) Total 81 features. Divide these features in to categorial(43) or numerical(38)
+        - further divide categorial/numerical features so that team of 4 can process through them
+        - each team member will be responsible for taking notes on the feature
+            - are there missing data, if so, how should we go about addressing the missing data
+            - look at p-value/RSS/Adjusted-RSS the feature against the SalesPrice
+              
