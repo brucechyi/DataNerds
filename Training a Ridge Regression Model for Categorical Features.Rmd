@@ -1,0 +1,88 @@
+---
+title: "Training a Ridge Regression Model for Categorical Features"
+output: rmarkdown::github_document
+
+always_allow_html: yes
+---
+
+```{r warning=FALSE,message=FALSE}
+library(data.table)
+library(dplyr)
+library(glmnet)
+library(highcharter)
+```
+
+####Getting Started
+```{r}
+cats_df <- fread("train_cats.csv")
+cats_df$V1 = NULL 
+
+cats_df <- cats_df %>% mutate_if(is.character,as.factor)
+
+quants_df <- fread('train_quants.csv')
+
+SalePrice <- quants_df$SalePrice
+
+#this adds SalePrice to our categorical dataset ()
+merged <- cbind(cats_df,SalePrice)
+
+#Remove ID and V1 columns
+merged = merged[,-c(1,2)]
+```
+
+####Ridge Regression Model
+```{r}
+#Need matrices for glmnet() function. Automatically conducts conversions as well
+#for factor variables into dummy variables.
+x = model.matrix(SalePrice ~ ., merged)[, -1] #Dropping the intercept column. After dummification we get 327 features!
+y = merged$SalePrice
+
+#Values of lambda over which to check.
+grid = 10^seq(9, -2, length = 100)
+
+ridge.models = glmnet(x, y, alpha = 0, lambda = grid)
+
+plot(ridge.models, xvar = "lambda", label = TRUE, main = "Ridge Regression")
+```
+
+
+####Cross-Validation
+```{r}
+set.seed(0)
+train = sample(1:nrow(x), 7*nrow(x)/10)
+test = (-train)
+y.test = y[test]
+
+length(train)/nrow(x)
+length(y.test)/nrow(x)
+
+set.seed(0)
+cv.ridge.out = cv.glmnet(x[train, ], y[train],
+                         lambda = grid, alpha = 0, nfolds = 10)
+plot(cv.ridge.out, main = "Ridge Regression\n")
+bestlambda.ridge = cv.ridge.out$lambda.min
+bestlambda.ridge
+log(bestlambda.ridge)
+```
+
+```{r}
+#What is the test RMSE associated with this best value of lambda?
+ridge.bestlambdatrain = predict.cv.glmnet(cv.ridge.out, s ="lambda.min", newx = x[test, ])
+sqrt(mean((ridge.bestlambdatrain - y.test)^2)) #our predicted prices are off by about $47k on average.
+
+compare <- cbind(y.test, ridge.bestlambdatrain)
+compare <- data.frame(compare)
+compare  = compare %>% rename(., predicted = X1)
+
+mean(apply(compare, 1, min)/apply(compare, 1, max)) 
+
+```
+**86.78% accuracy achieved using Ridge Regression on Categorical Features.**
+
+
+
+####How does our predictions using dummified variables and Ridge Regression compare to the actual prices?
+```{r}
+hchart(density(compare$predicted), type = "area", color = "#B71C1C", name = "Predicted")%>% hc_add_series(density(compare$y.test), area = TRUE, name = "Actual") %>% hc_add_theme(hc_theme_db()) %>%hc_title(text="House Sales Prices | Predicted vs Actual (categorical features only)", align= "center")
+```
+
