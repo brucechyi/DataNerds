@@ -239,7 +239,9 @@ ridge.models = glmnet(x, y, alpha = 0, lambda = grid)
 plot(ridge.models, xvar = "lambda", label = TRUE, main = "Ridge Regression")
 ```
 
-![](Training_A_Ridge_Regression_Model_files/figure-markdown_github/unnamed-chunk-5-1.png) \#\#\#Training our model using 10-Fold Cross-Validation
+![](Training_A_Ridge_Regression_Model_files/figure-markdown_github/unnamed-chunk-5-1.png)
+
+### Training our model using 10-Fold Cross-Validation
 
 ``` r
 #train on 70% test on 30%
