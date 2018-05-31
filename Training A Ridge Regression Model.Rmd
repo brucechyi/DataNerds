@@ -1,0 +1,135 @@
+---
+title: "Training A Ridge Regression Model"
+output: html_notebook
+---
+
+
+
+
+###Libraries
+```{r}
+library(data.table)
+library(dplyr)
+library(ISLR)
+library(glmnet)
+library(MASS)
+library(car)
+```
+
+###Finding the best lambda for our multilinear model of quantitative features
+####(This is the csv that grouped all the quantitative features)
+
+```{r}
+quant_df = fread('train_quants.csv')
+
+#Remove index column 
+quant_df$V1 = NULL
+
+#create a multi-linear model with for SalePrice vs quant. features
+model = lm(SalePrice ~ ., data = quant_df)
+summary(model)
+plot(model)
+influencePlot(model)
+
+#From residuals vs. leverage and influence plot, find outliers (524, 1183, 1299)
+#Remove these outliers from the dataframe
+quant_df = quant_df[-c(524, 1183, 1299),]
+```
+
+```{r}
+#overwrite model variable using new dataframe
+model = lm(SalePrice ~ ., data = quant_df)
+#apply boxcox() to our model
+model.transformed = boxcox(model, lambda = seq(-2, 2, 1/10), plotit = TRUE,
+       interp = T, eps = 1/50, xlab = expression(lambda),
+       ylab = "log-Likelihood")
+#Extracting best lambda by finding the maximum log-likelihood.
+lambda = model.transformed$x[which(model.transformed$y == max(model.transformed$y))] #the best lambda for our model is                                                                                            0.26262626262.
+```
+
+###Apply boxcox transfomation to all cells of dataframe
+If you look at the distribution of all the quantitative features in the dataset, none of them are nomrally distributed.
+By normalizing our features using boxcox transformation, we can fine-tune our model's accuracy
+*note* some of the features could benefit from log transformation instead of boxcox (check out the "LotFrontage" distribution).
+
+```{r}
+#Define a function "bc" that applies the boxcox formula to a variable "obs"
+bc <- function (obs, lambda) {(obs^lambda-1)/lambda }
+
+#Use mapply() to apply the bc function to our dataset using our best lambda (0.26262626262)
+quant_df_bc = mapply(bc,quant_df,lambda)
+
+#convert quant_df_bc to dataframe
+quant_df_bc = data.frame(quant_df_bc)
+
+#new multilinear model that uses our boxcox transfomed dataframe
+model.bc = lm(SalePrice ~ ., data = quant_df_bc)
+plot(model.bc)
+
+#a new outlier at index 954 is revealed
+#remove outlier
+quant_df_bc = quant_df_bc[-c(954),]
+model.bc = lm(SalePrice ~ ., data = quant_df_bc)
+plot(model.bc)
+
+summary(model.bc)
+vif(model.bc)
+coef(model.bc) #Looking at the coefficients: TotRmsAbvGrd, GrLiVArea, BedroomAbvGr, FullBath, and (especially) KitchenAbvGr have high coefficients.  This suggests some sort of colinearity amongst these features.  If we remove these features, we can further tune the model.
+```
+
+###Creating a ridge regression model
+```{r}
+#define x and y for our ridge regression
+x = model.matrix(SalePrice ~ ., data = quant_df_bc)[, -1] #Dropping the intercept column.
+y = quant_df_bc$SalePrice
+#define grid for our ridge regression
+grid = 10^seq(5, -3, length = 100)
+#create our ridge model using x, y, and grid.
+ridge.models = glmnet(x, y, alpha = 0, lambda = grid)
+
+plot(ridge.models, xvar = "lambda", label = TRUE, main = "Ridge Regression")
+
+```
+###Training our model using 10-Fold Cross-Validation
+```{r}
+#train on 70% test on 30%
+set.seed(0)
+train = sample(1:nrow(x), 7*nrow(x)/10)
+test = (-train)
+y.test = y[test]
+
+#Double check 70/30 train/test split
+length(train)/nrow(x)
+length(y.test)/nrow(x)
+
+#Running 10-fold cross validation.
+set.seed(0)
+cv.ridge.out = cv.glmnet(x[train, ], y[train],
+                         lambda = grid, alpha = 0, nfolds = 10)
+plot(cv.ridge.out, main = "Ridge Regression\n")
+bestlambda.ridge = cv.ridge.out$lambda.min
+bestlambda.ridge # 0.01353048 best lamda for our ridge regression
+log(bestlambda.ridge) # -4.302811 log of best lamda for our ridge regression
+
+#What is the test MSE associated with this best value of lambda?
+
+ridge.bestlambdatrain = predict.cv.glmnet(cv.ridge.out, s ="lambda.min", newx = x[test, ]) 
+mean((ridge.bestlambdatrain - y.test)^2) #MSE = 17.29462
+
+#What is the test RMSE associated with this best value of lambda?
+sqrt(mean((ridge.bestlambdatrain - y.test)^2)) #RMSE = 4.15868
+
+#What is the accuracy of our model after 10-fold cross validation?
+compare <- cbind(actual = y.test, ridge.bestlambdatrain)
+compare <- data.frame(compare)
+compare  = compare %>% rename(., predicted = X1)
+mean (apply(compare, 1, min)/apply(compare, 1, max)) # 96.46492% accuracy of our trained model to our test sample
+
+```
+####(optional) We can use feature selection (remove features with high coefficients) to further tune the linear model 
+
+
+
+
+
+
